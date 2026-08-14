@@ -502,22 +502,6 @@ input {
   background-size: 180px 140px, 240px 210px, 56px 56px, 56px 56px;
 }
 
-.fallback-map-grid::before {
-  position: absolute;
-  left: 18%;
-  top: 12%;
-  width: 64%;
-  height: 74%;
-  content: "蒲城县";
-  display: grid;
-  place-items: center;
-  border: 2px solid rgba(69, 213, 255, 0.5);
-  clip-path: polygon(13% 2%, 82% 0, 98% 18%, 93% 72%, 72% 98%, 21% 93%, 2% 66%, 6% 23%);
-  color: rgba(87, 191, 231, 0.15);
-  font-size: 74px;
-  letter-spacing: 0.25em;
-}
-
 .fallback-vehicle {
   position: absolute;
   width: 20px;
@@ -583,6 +567,24 @@ input {
 .map-theme-notice .ant-btn { color: #45d5ff; }
 .map-theme-notice .ant-btn:hover { color: #dff4ff !important; background: #0a213c !important; }
 
+.map-region-notice {
+  position: absolute;
+  z-index: 7;
+  top: 94px;
+  left: 18px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid #164e73;
+  background: rgba(7, 20, 41, 0.94);
+  color: #7fa9ca;
+  font-size: 13px;
+}
+
+.map-region-notice > svg { color: #ffd332; }
+
 .map-topline {
   position: absolute;
   z-index: 5;
@@ -606,6 +608,30 @@ input {
 .map-live-state { display: flex; align-items: center; gap: 18px; }
 .map-density-state { color: #7fa9ca; font-size: 13px; }
 
+.map-region-anchor {
+  position: absolute;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 5px 13px 5px 9px;
+  border: 1px solid #45d5ff;
+  clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+  background: rgba(7, 20, 41, 0.96);
+  color: #dff4ff;
+  cursor: pointer;
+  text-align: left;
+}
+
+.map-region-anchor > svg { color: #45d5ff; }
+.map-region-anchor > span { display: grid; gap: 1px; }
+.map-region-anchor strong { color: #dff4ff; font-size: 14px; font-weight: 650; line-height: 1.1; }
+.map-region-anchor small { color: #7fa9ca; font-size: 11px; line-height: 1.1; }
+.map-region-anchor:hover { border-color: #ffd332; color: #ffd332; }
+.map-region-anchor:hover > svg { color: #ffd332; }
+.map-region-anchor:focus-visible { outline: 2px solid #ffd332; outline-offset: 3px; }
+
 .map-legend {
   position: absolute;
   z-index: 5;
@@ -613,22 +639,23 @@ input {
   bottom: 42px;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-  width: min(610px, calc(100% - 36px));
-  padding: 10px;
+  gap: 4px;
+  width: min(460px, calc(100% - 36px));
+  padding: 6px;
   border: 1px solid #1b5d83;
   background: rgba(5, 25, 47, 0.92);
 }
 
 .map-legend button {
-  height: 34px;
-  padding: 0 12px;
+  height: 30px;
+  padding: 0 8px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   border: 1px solid transparent;
   color: #718fa7;
   background: #081a31;
+  font-size: 13px;
   cursor: pointer;
 }
 
@@ -753,19 +780,16 @@ input {
 .vehicle-popup-details dd { margin: 0; overflow: hidden; color: #dff4ff; text-overflow: ellipsis; white-space: nowrap; }
 
 .native-cluster-marker {
-  --vehicle-color: #25b8ff;
+  --vehicle-cluster-image: url('/assets/map/clusters/blue.png');
   --vehicle-offset-x: 0px;
   --vehicle-offset-y: 0px;
-  position: relative;
   box-sizing: border-box;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1px;
   border: 0;
   color: #dff4ff;
-  background: url('/assets/map/cluster-ring.png') center / 100% 100% no-repeat;
+  background: var(--vehicle-cluster-image) center / 100% 100% no-repeat;
   font-family: "DIN Alternate", "Arial Narrow", sans-serif;
   font-weight: 700;
   text-align: center;
@@ -773,42 +797,20 @@ input {
   transform: translate(var(--vehicle-offset-x), var(--vehicle-offset-y));
 }
 
-.native-cluster-marker::before {
-  position: absolute;
-  inset: 0;
-  background: var(--vehicle-color);
-  content: '';
-  pointer-events: none;
-  -webkit-mask: url('/assets/map/cluster-ring.png') center / 100% 100% no-repeat;
-  mask: url('/assets/map/cluster-ring.png') center / 100% 100% no-repeat;
-}
-
-.native-cluster-marker:hover::before {
-  filter: brightness(1.2);
-}
-
 .native-cluster-marker:focus-visible {
   outline: 2px solid #ffd332;
   outline-offset: 3px;
 }
 
-.native-cluster-marker-label {
-  position: relative;
-  z-index: 1;
-  max-width: calc(100% - 6px);
-  overflow: hidden;
-  color: var(--vehicle-color);
-  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
-  font-size: 9px;
-  font-weight: 650;
-  line-height: 1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .native-cluster-marker-count {
   position: relative;
   z-index: 1;
+  display: grid;
+  min-width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 50%;
+  background: #061327;
   color: #dff4ff;
   font: 700 15px/1 "DIN Alternate", "Arial Narrow", sans-serif;
 }
@@ -1055,17 +1057,24 @@ input {
 
 .urban-layout {
   height: 100%;
+  min-height: 0;
   padding: 8px 10px;
   display: grid;
-  grid-template-columns: 28% 31% 41%;
+  grid-template-columns: minmax(0, 28fr) minmax(0, 31fr) minmax(0, 41fr);
   gap: 10px;
 }
 
 .urban-metrics,
 .urban-stations,
-.urban-chart { min-width: 0; }
+.urban-chart { min-width: 0; min-height: 0; }
 .urban-stations,
-.urban-chart { border-left: 1px solid #164e73; padding-left: 10px; }
+.urban-chart {
+  display: grid;
+  grid-template-rows: 22px minmax(0, 1fr);
+  overflow: hidden;
+  border-left: 1px solid #164e73;
+  padding-left: 10px;
+}
 
 .urban-vehicle-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
 .urban-vehicle-row > span { min-width: 0; padding: 7px; color: #84a9c0; font-size: 10px; background: #0a213c; white-space: nowrap; }
@@ -1081,11 +1090,12 @@ input {
 .urban-metrics--service-first {
   height: 100%;
   display: grid;
-  grid-template-rows: 1.25fr 1fr;
+  grid-template-rows: minmax(0, 1.25fr) minmax(0, 1fr);
   gap: 7px;
 }
 
 .urban-service-row--primary {
+  min-width: 0;
   min-height: 0;
   margin: 0;
   grid-template-columns: 1.35fr 1fr;
@@ -1093,29 +1103,37 @@ input {
 }
 
 .urban-service-row--primary > div {
+  min-width: 0;
+  min-height: 0;
   display: grid;
   align-content: center;
+  overflow: hidden;
   padding: 10px;
 }
 
 .urban-service-row--primary strong { font-size: 25px; }
 
 .urban-vehicle-row--secondary {
+  min-width: 0;
   min-height: 0;
   gap: 6px;
 }
 
 .urban-vehicle-row--secondary > span {
+  min-width: 0;
+  min-height: 0;
   display: grid;
   align-content: center;
+  overflow: hidden;
   padding: 8px;
 }
 
 .subsection-title { height: 22px; color: #66d4ff; font-size: 12px; }
-.station-table .ant-table { font-size: 11px; }
-.station-table .ant-table-thead > tr > th { padding: 4px 6px !important; }
-.station-table .ant-table-tbody > tr > td { padding: 3px 6px !important; }
-.urban-chart .quarter-chart { height: calc(100% - 22px); }
+.station-table { min-height: 0; overflow: hidden; }
+.station-table .ant-table { height: 100%; font-size: 11px; line-height: 1.2; }
+.station-table .ant-table-thead > tr > th { height: 23px; padding: 2px 6px !important; line-height: 1.2; }
+.station-table .ant-table-tbody > tr > td { height: 23px; padding: 2px 6px !important; line-height: 1.2; }
+.urban-chart .quarter-chart { min-height: 0; height: 100%; }
 
 .dashboard-footer {
   position: absolute;
