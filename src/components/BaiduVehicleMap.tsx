@@ -23,10 +23,16 @@ declare global {
 type MapState = 'loading' | 'ready' | 'fallback';
 type MapLoadingPhase = 'service' | 'style' | 'tiles';
 type MapThemeState = 'loading' | 'ready' | 'fallback';
+type RegionBoundaryState = 'loading' | 'ready' | 'fallback';
 
 type PopupPosition = {
   left: number;
   top: number;
+};
+
+type MapPoint = {
+  lng: number;
+  lat: number;
 };
 
 type VehicleClusterClickEvent = {
@@ -46,6 +52,15 @@ const VEHICLE_ICON_PATHS: Record<VehicleCategory, string> = {
   tour: '/assets/map/vehicles/tour.png',
 };
 
+const VEHICLE_CLUSTER_PATHS: Record<VehicleCategory, string> = {
+  bus: '/assets/map/clusters/green.png',
+  taxi: '/assets/map/clusters/blue.png',
+  rideHailing: '/assets/map/clusters/yellow.png',
+  dangerous: '/assets/map/clusters/purple.png',
+  scheduled: '/assets/map/clusters/orange.png',
+  tour: '/assets/map/clusters/red.png',
+};
+
 const VEHICLE_TYPE_BY_CATEGORY = new Map(vehicleTypes.map((type) => [type.key, type]));
 
 const VEHICLE_CATEGORY_OFFSETS: Record<VehicleCategory, [number, number]> = {
@@ -59,6 +74,8 @@ const VEHICLE_CATEGORY_OFFSETS: Record<VehicleCategory, [number, number]> = {
 
 const MAP_RENDER_TIMEOUT = 15_000;
 const MAP_STYLE_VALIDATION_TIMEOUT = 6_000;
+const REGION_BOUNDARY_TIMEOUT = 8_000;
+const PUCHENG_MAP_VIEW = { lng: 109.5863, lat: 34.9559, zoom: 12 };
 
 const MAP_LOADING_COPY: Record<MapLoadingPhase, { title: string; detail: string }> = {
   service: {
@@ -177,6 +194,25 @@ function getClusterTypeKey(properties: { category?: unknown; vehicleId?: unknown
   return category ?? `unknown-${String(properties.vehicleId)}`;
 }
 
+function getNorthwestBoundaryAnchor(paths: string[]): MapPoint | null {
+  const points = paths.flatMap((path) => path.split(';').flatMap((coordinate) => {
+    const [lng, lat] = coordinate.split(',').map(Number);
+    return Number.isFinite(lng) && Number.isFinite(lat) ? [{ lng, lat }] : [];
+  }));
+  if (!points.length) return null;
+
+  const minLng = Math.min(...points.map((point) => point.lng));
+  const maxLat = Math.max(...points.map((point) => point.lat));
+  const lngRange = Math.max(...points.map((point) => point.lng)) - minLng || 1;
+  const latRange = maxLat - Math.min(...points.map((point) => point.lat)) || 1;
+  return points.reduce((northwest, point) => (
+    ((point.lng - minLng) / lngRange) + ((maxLat - point.lat) / latRange)
+      < ((northwest.lng - minLng) / lngRange) + ((maxLat - northwest.lat) / latRange)
+      ? point
+      : northwest
+  ));
+}
+
 type ClusterMarkerDataset = {
   pointCount?: number;
   reduces?: { divide_type?: unknown };
@@ -186,6 +222,7 @@ function applyCategoryMarkerStyle(marker: HTMLElement, category: VehicleCategory
   const type = VEHICLE_TYPE_BY_CATEGORY.get(category)!;
   const [offsetX, offsetY] = VEHICLE_CATEGORY_OFFSETS[category];
   marker.style.setProperty('--vehicle-color', type.color);
+  marker.style.setProperty('--vehicle-cluster-image', `url(${VEHICLE_CLUSTER_PATHS[category]})`);
   marker.style.setProperty('--vehicle-offset-x', `${offsetX}px`);
   marker.style.setProperty('--vehicle-offset-y', `${offsetY}px`);
   marker.dataset.category = category;
@@ -199,7 +236,7 @@ function createClusterMarker(dataset: ClusterMarkerDataset) {
   if (!category) return createVehicleMarker({});
 
   const type = VEHICLE_TYPE_BY_CATEGORY.get(category)!;
-  const size = count >= 30 ? 58 : count >= 12 ? 52 : 46;
+  const size = 48;
   const marker = document.createElement('div');
   marker.className = 'native-cluster-marker';
   marker.style.width = `${size}px`;
@@ -207,13 +244,10 @@ function createClusterMarker(dataset: ClusterMarkerDataset) {
   marker.style.fontSize = count >= 100 ? '12px' : '13px';
   applyCategoryMarkerStyle(marker, category);
 
-  const label = document.createElement('span');
-  label.className = 'native-cluster-marker-label';
-  label.textContent = type.shortLabel;
   const value = document.createElement('strong');
   value.className = 'native-cluster-marker-count';
   value.textContent = String(count);
-  marker.append(label, value);
+  marker.append(value);
   marker.dataset.count = String(count);
   marker.setAttribute('role', 'button');
   marker.setAttribute('tabindex', '0');
@@ -252,6 +286,7 @@ export function BaiduVehicleMap() {
   const clusterRef = useRef<any>(null);
   const visibleVehiclesRef = useRef<VehiclePosition[]>([]);
   const selectedVehicleRef = useRef<VehiclePosition | null>(null);
+  const regionAnchorRef = useRef<MapPoint | null>(null);
   const mapLifecycleCleanupRef = useRef<() => void>(() => undefined);
   const retryMapThemeRef = useRef<() => void>(() => undefined);
   const mapAttemptRef = useRef(0);
@@ -259,11 +294,13 @@ export function BaiduVehicleMap() {
   const [mapState, setMapState] = useState<MapState>('loading');
   const [mapLoadingPhase, setMapLoadingPhase] = useState<MapLoadingPhase>('service');
   const [mapThemeState, setMapThemeState] = useState<MapThemeState>('loading');
+  const [regionBoundaryState, setRegionBoundaryState] = useState<RegionBoundaryState>('loading');
   const [mapError, setMapError] = useState('');
   const [mapThemeError, setMapThemeError] = useState('');
   const [vehicles, setVehicles] = useState(() => createVehicles());
   const [selectedVehicle, setSelectedVehicle] = useState<VehiclePosition | null>(null);
   const [popupPosition, setPopupPosition] = useState<PopupPosition | null>(null);
+  const [regionAnchorPosition, setRegionAnchorPosition] = useState<PopupPosition | null>(null);
   const [mapDensity, setMapDensity] = useState({ clusters: 0, vehicles: 0 });
   const [selectedCategories, setSelectedCategories] = useState<Set<VehicleCategory>>(
     () => new Set(vehicleTypes.map((type) => type.key)),
@@ -303,6 +340,23 @@ export function BaiduVehicleMap() {
     ));
   }, []);
 
+  const positionRegionAnchor = useCallback((anchor = regionAnchorRef.current) => {
+    const BMapGL = window.BMapGL;
+    const map = mapRef.current;
+    const mapElement = mapElementRef.current;
+    if (!BMapGL || !map || !mapElement || !anchor) return;
+    const pixel = map.pointToOverlayPixel(new BMapGL.Point(anchor.lng, anchor.lat));
+    // 锚点离屏后贴到安全边缘，仍提供“复位全县”的唯一主动入口。
+    const left = Math.max(18, Math.min(mapElement.clientWidth - 174, pixel.x + 14));
+    const top = Math.max(94, Math.min(mapElement.clientHeight - 144, pixel.y + 14));
+    const next = { left, top };
+    setRegionAnchorPosition((current) => (
+      current && Math.abs(current.left - next.left) < 0.5 && Math.abs(current.top - next.top) < 0.5
+        ? current
+        : next
+    ));
+  }, []);
+
   const openVehicleDetails = useCallback((event: VehicleClusterClickEvent) => {
     if (event.isCluster) return;
     // Cluster 会原样回传 GeoJSON properties；保留车辆快照可避免地图重绘时再按 ID 查找失败。
@@ -322,6 +376,8 @@ export function BaiduVehicleMap() {
     clusterRef.current = null;
     mapRef.current?.destroy?.();
     mapRef.current = null;
+    regionAnchorRef.current = null;
+    setRegionAnchorPosition(null);
     mapShellRef.current?.classList.remove('is-vehicle-hover');
     mapElementRef.current?.replaceChildren();
   }, []);
@@ -332,6 +388,7 @@ export function BaiduVehicleMap() {
     setMapState('loading');
     setMapLoadingPhase('service');
     setMapThemeState('loading');
+    setRegionBoundaryState('loading');
     setMapError('');
     setMapThemeError('');
     const ak = import.meta.env.VITE_BAIDU_MAP_AK?.trim();
@@ -356,6 +413,8 @@ export function BaiduVehicleMap() {
       let operationalLayersInitialized = false;
       let revealTimer: number | null = null;
       let themeTimer: number | null = null;
+      let boundaryTimer: number | null = null;
+      let boundarySettled = false;
 
       const removeReadinessListeners = () => {
         map.removeEventListener?.('style_loaded', handleStyleLoaded);
@@ -365,6 +424,7 @@ export function BaiduVehicleMap() {
         window.clearTimeout(renderTimeout);
         if (themeTimer !== null) window.clearTimeout(themeTimer);
         if (revealTimer !== null) window.clearTimeout(revealTimer);
+        if (boundaryTimer !== null) window.clearTimeout(boundaryTimer);
       };
 
       const finishReady = () => {
@@ -502,7 +562,7 @@ export function BaiduVehicleMap() {
       mapLifecycleCleanupRef.current = removeReadinessListeners;
       retryMapThemeRef.current = () => void applyMapTheme();
 
-      map.centerAndZoom(new BMapGL.Point(109.5863, 34.9559), 12);
+      map.centerAndZoom(new BMapGL.Point(PUCHENG_MAP_VIEW.lng, PUCHENG_MAP_VIEW.lat), PUCHENG_MAP_VIEW.zoom);
       map.enableScrollWheelZoom(true);
       map.setDefaultCursor?.('grab');
       map.addControl(new BMapGL.ScaleControl({ anchor: BMapGL.BMAP_ANCHOR_BOTTOM_LEFT }));
@@ -556,21 +616,54 @@ export function BaiduVehicleMap() {
 
         map.addEventListener('zoomend', () => {
           if (selectedVehicleRef.current) positionPopup(selectedVehicleRef.current);
+          positionRegionAnchor();
         });
         map.addEventListener('moveend', () => {
           if (selectedVehicleRef.current) positionPopup(selectedVehicleRef.current);
+          positionRegionAnchor();
         });
 
         const boundary = new BMapGL.Boundary();
-        boundary.get('渭南市蒲城县', (result: { boundaries?: string[] }) => {
-          result.boundaries?.forEach((path) => {
-            const polygon = new BMapGL.Polygon(path, {
-              strokeColor: '#45d5ff', strokeWeight: 2, strokeOpacity: 0.9,
-              fillColor: '#0b5b88', fillOpacity: 0.08,
-            });
-            map.addOverlay(polygon);
+        const finishBoundary = (state: RegionBoundaryState) => {
+          if (boundarySettled || attempt !== mapAttemptRef.current || mapRef.current !== map) return;
+          boundarySettled = true;
+          if (boundaryTimer !== null) window.clearTimeout(boundaryTimer);
+          if (state === 'fallback') {
+            regionAnchorRef.current = null;
+            setRegionAnchorPosition(null);
+          }
+          setRegionBoundaryState(state);
+        };
+        boundaryTimer = window.setTimeout(() => finishBoundary('fallback'), REGION_BOUNDARY_TIMEOUT);
+        try {
+          boundary.get('渭南市蒲城县', (result: { boundaries?: string[] }) => {
+            const paths = result.boundaries?.filter(Boolean) ?? [];
+            if (boundarySettled || !paths.length || attempt !== mapAttemptRef.current || mapRef.current !== map) {
+              finishBoundary('fallback');
+              return;
+            }
+            try {
+              paths.forEach((path) => {
+                map.addOverlay(new BMapGL.Polygon(path, {
+                  strokeColor: '#164e73', strokeWeight: 4, strokeOpacity: 0.7, fillOpacity: 0,
+                  enableClicking: false,
+                }));
+                map.addOverlay(new BMapGL.Polygon(path, {
+                  strokeColor: '#45d5ff', strokeWeight: 2, strokeOpacity: 0.95,
+                  fillColor: '#0b5b88', fillOpacity: 0.1,
+                  enableClicking: false,
+                }));
+              });
+              regionAnchorRef.current = getNorthwestBoundaryAnchor(paths);
+              finishBoundary('ready');
+              window.requestAnimationFrame(() => positionRegionAnchor());
+            } catch {
+              finishBoundary('fallback');
+            }
           });
-        });
+        } catch {
+          finishBoundary('fallback');
+        }
       };
       void applyMapTheme();
     } catch (error) {
@@ -578,7 +671,7 @@ export function BaiduVehicleMap() {
       setMapError(error instanceof Error ? error.message : '地图服务连接失败');
       setMapState('fallback');
     }
-  }, [disposeMapInstance, openVehicleDetails, positionPopup]);
+  }, [disposeMapInstance, openVehicleDetails, positionPopup, positionRegionAnchor]);
 
   useEffect(() => {
     void initializeMap();
@@ -609,6 +702,13 @@ export function BaiduVehicleMap() {
       else next.add(key);
       return next;
     });
+  }
+
+  function resetPuchengView() {
+    const BMapGL = window.BMapGL;
+    const map = mapRef.current;
+    if (!BMapGL || !map) return;
+    map.centerAndZoom(new BMapGL.Point(PUCHENG_MAP_VIEW.lng, PUCHENG_MAP_VIEW.lat), PUCHENG_MAP_VIEW.zoom);
   }
 
   function changeZoom(delta: number) {
@@ -674,6 +774,12 @@ export function BaiduVehicleMap() {
           )}
         </div>
       )}
+      {mapState === 'ready' && regionBoundaryState === 'fallback' && (
+        <div className="map-region-notice" role="status" aria-live="polite">
+          <ExclamationCircleOutlined />
+          <span>行政范围暂未加载</span>
+        </div>
+      )}
       <div className="map-topline">
         <div>
           <span className="map-kicker">实时运行车辆</span>
@@ -685,6 +791,20 @@ export function BaiduVehicleMap() {
           <span className="map-update"><i />每 5 秒更新</span>
         </div>
       </div>
+      {mapState === 'ready' && regionBoundaryState === 'ready' && regionAnchorPosition && (
+        <Tooltip title="点击复位全县视角">
+          <button
+            type="button"
+            className="map-region-anchor"
+            style={{ left: regionAnchorPosition.left, top: regionAnchorPosition.top }}
+            onClick={resetPuchengView}
+            aria-label="蒲城县，全县运行态势；点击复位全县视角"
+          >
+            <EnvironmentOutlined aria-hidden="true" />
+            <span><strong>蒲城县</strong><small>全县运行态势</small></span>
+          </button>
+        </Tooltip>
+      )}
       {selectedVehicle && selectedVehicleType && popupPosition && (
         <aside
           className="vehicle-popup"
