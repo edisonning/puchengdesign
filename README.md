@@ -25,7 +25,8 @@ VITE_BAIDU_MAP_STYLE_ID=your_published_style_id
 
 地图车辆图标位于 `public/assets/map/vehicles/`，按用户指定从本地株洲大屏项目复用公交、出租、网约、危货、班线客运和旅游包车六类透明定位图标。聚合与单车统一使用百度官方 `@bmapgl-plugin/cluster`：聚合点注入本项目聚合环，非聚合点由百度 WebGL `PointIconLayer` 绘制。
 
-## 构建-12345
+
+## 项目构建-test
 
 ```bash
 npm run build
